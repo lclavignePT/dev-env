@@ -1,0 +1,10 @@
+services:
+  dev:
+    image: dev-node
+    extends:
+      file: docker-compose.base.yml
+      service: dev
+    volumes:
+      - node_modules:/home/devuser/.node_modules
+volumes:
+  node_modules: 

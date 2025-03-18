@@ -1,0 +1,171 @@
+#!/bin/bash
+# docker-dev/bin/dev-env
+# Script principal para o ambiente de desenvolvimento Docker
+
+# Habilitar o modo de depuração
+# set -x
+
+# Caminho absoluto para o diretório do script
+SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_PATH")"
+ORIGINAL_SRC_DIR="$PROJECT_ROOT/src"
+
+# Adicionar informações de depuração
+echo "Script path: $SCRIPT_PATH"
+echo "Project root: $PROJECT_ROOT"
+echo "Source directory: $ORIGINAL_SRC_DIR"
+
+# Configuração do sistema
+CONFIG_DIR="$HOME/.config/dev-env"
+USER_CONFIG_FILE="$CONFIG_DIR/config"
+
+# Carregar configuração de usuário (que define PROJECTS_DIR)
+if [ -f "$USER_CONFIG_FILE" ]; then
+  source "$USER_CONFIG_FILE"
+  echo "Diretório de projetos: $PROJECTS_DIR"
+else
+  echo "Erro: Arquivo de configuração de usuário não encontrado em $USER_CONFIG_FILE"
+  echo "Por favor, execute o instalador novamente."
+  exit 1
+fi
+
+# Verificar se é uma instalação ou ambiente de desenvolvimento
+if [[ "$SCRIPT_PATH" == *"/.local/share/dev-env/bin"* ]]; then
+  # Ambiente instalado
+  INSTALLED=true
+  echo "Modo instalado ativado"
+  
+  # Carregar módulos da instalação
+  SRC_DIR="$(dirname "$SCRIPT_PATH")/src"
+  source "$SRC_DIR/config.sh"
+  source "$SRC_DIR/utils.sh"
+  source "$SRC_DIR/images.sh"
+  source "$SRC_DIR/projects.sh"
+else
+  # Ambiente de desenvolvimento
+  INSTALLED=false
+  echo "Modo desenvolvimento ativado"
+  
+  # Modificar temporariamente o arquivo config.sh
+  CONFIG_FILE="$ORIGINAL_SRC_DIR/config.sh"
+  if [ -f "$CONFIG_FILE" ]; then
+    echo "Modificando temporariamente config.sh para usar caminhos de desenvolvimento"
+    # Criar uma cópia temporária do arquivo config.sh
+    TMP_CONFIG=$(mktemp)
+    cp "$CONFIG_FILE" "$TMP_CONFIG"
+    
+    # Adicionar a definição de PROJECTS_DIR antes das outras configurações
+    sed -i "1a # Definir PROJECTS_DIR que vem do arquivo de configuração do usuário\nexport PROJECTS_DIR=\"$PROJECTS_DIR\"" "$TMP_CONFIG"
+    
+    # Substituir as definições de BASE_DIR e SRC_DIR
+    sed -i "s|export BASE_DIR=.*|export BASE_DIR=\"$PROJECT_ROOT\"|" "$TMP_CONFIG"
+    sed -i "s|export SRC_DIR=.*|export SRC_DIR=\"$ORIGINAL_SRC_DIR\"|" "$TMP_CONFIG"
+    sed -i "s|export TEMPLATES_DIR=.*|export TEMPLATES_DIR=\"$ORIGINAL_SRC_DIR/templates\"|" "$TMP_CONFIG"
+    sed -i "s|export DOCKERFILES_DIR=.*|export DOCKERFILES_DIR=\"$PROJECT_ROOT/base\"|" "$TMP_CONFIG"
+    
+    # Definir arquivo de log para ambiente de desenvolvimento
+    sed -i "s|export LOG_FILE=.*|export LOG_FILE=\"$PROJECT_ROOT/dev-env.log\"|" "$TMP_CONFIG"
+    
+    # Carregar a versão modificada
+    source "$TMP_CONFIG"
+    
+    # Carregar os outros módulos
+    source "$ORIGINAL_SRC_DIR/utils.sh"
+    source "$ORIGINAL_SRC_DIR/images.sh"
+    source "$ORIGINAL_SRC_DIR/projects.sh"
+    
+    # Corrigir a função de logging
+    export LOG_FILE="$PROJECT_ROOT/dev-env.log"
+    touch "$LOG_FILE"
+    
+    # Redefinir a função log_message para usar o arquivo correto
+    log_message() {
+      local message="$1"
+      local level="${2:-INFO}"
+      local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+      
+      if [ "$ENABLE_LOGGING" = true ]; then
+        echo "[$timestamp] [$level] $message" >> "$LOG_FILE"
+      fi
+      
+      # Também mostrar na saída padrão
+      echo "[$level] $message"
+    }
+    
+    # Limpar o arquivo temporário
+    rm "$TMP_CONFIG"
+  else
+    echo "Erro: Arquivo de configuração não encontrado: $CONFIG_FILE"
+    exit 1
+  fi
+fi
+
+# Função de ajuda
+show_help() {
+  echo "Uso: $(basename $0) [comando] [opções]"
+  echo ""
+  echo "Comandos:"
+  echo "  create PROJETO [TIPO]  - Cria um novo ambiente para o projeto (tipo: base, python, node)"
+  echo "  enter PROJETO          - Entra no shell do ambiente do projeto"
+  echo "  rebuild PROJETO        - Recria o ambiente do projeto (útil para corrigir problemas)"
+  echo "  clean PROJETO          - Remove volumes do projeto para liberar espaço"
+  echo "  code PROJETO           - Abre o VS Code para o projeto"
+  echo "  build-base             - Reconstrói a imagem base"
+  echo "  build-node             - Reconstrói a imagem Node"
+  echo "  build-all              - Reconstrói todas as imagens (base, python, node)"
+  echo "  list                   - Lista todos os ambientes disponíveis"
+  echo "  help                   - Mostra esta ajuda"
+  echo ""
+  echo "Exemplos:"
+  echo "  $(basename $0) create meu-app-python python"
+  echo "  $(basename $0) create meu-app-node node"
+  echo "  $(basename $0) create meu-projeto     # Cria um ambiente base"
+  echo "  $(basename $0) clean meu-app-node     # Limpa os volumes do projeto node"
+  echo "  $(basename $0) code meu-projeto       # Abre o VS Code para o projeto"
+}
+
+# Verificar se o diretório de projetos existe
+ensure_directory_exists "$PROJECTS_DIR"
+
+# Processar comandos
+case "$1" in
+  create)
+    create_project "$2" "$3"
+    ;;
+  enter)
+    enter_project "$2"
+    ;;
+  rebuild)
+    rebuild_project "$2"
+    ;;
+  clean)
+    clean_project "$2"
+    ;;
+  code)
+    open_vscode "$2"
+    ;;
+  build-base)
+    build_base_image
+    ;;
+  build-node)
+    build_node_image
+    ;;
+  build-all)
+    build_all_images
+    ;;
+  list)
+    list_projects
+    ;;
+  help|--help|-h)
+    show_help
+    ;;
+  *)
+    if [ -z "$1" ]; then
+      show_help
+    else
+      log_message "Comando desconhecido: $1" "ERROR"
+      show_help
+      exit 1
+    fi
+    ;;
+esac 

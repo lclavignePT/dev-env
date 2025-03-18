@@ -1,0 +1,10 @@
+services:
+  dev:
+    image: dev-python
+    extends:
+      file: docker-compose.base.yml
+      service: dev
+    volumes:
+      - python_venvs:/home/devuser/.venvs
+volumes:
+  python_venvs: 

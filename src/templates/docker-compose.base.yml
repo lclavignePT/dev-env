@@ -1,0 +1,37 @@
+services:
+  dev:
+    image: dev-base
+    volumes:
+      - .:/home/devuser/project
+      - $HOME/.ssh:/home/devuser/.ssh:ro
+      - $HOME/.gitconfig:/home/devuser/.gitconfig:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /var/run/dbus:/var/run/dbus
+      # Suporte a fontes
+      - /usr/share/fonts:/usr/share/fonts:ro
+      - $HOME/.local/share/fonts:/home/devuser/.local/share/fonts:ro
+      # Suporte a temas do sistema
+      - /usr/share/themes:/usr/share/themes:ro
+      - /usr/share/icons:/usr/share/icons:ro
+      - $HOME/.themes:/home/devuser/.themes:ro
+      - $HOME/.icons:/home/devuser/.icons:ro
+      # Certificados SSL/TLS
+      - /etc/ssl/certs:/etc/ssl/certs:ro
+    working_dir: /home/devuser/project
+    command: /bin/zsh
+    environment:
+      - DISPLAY=${DISPLAY}
+      - XAUTHORITY=/home/devuser/.Xauthority
+      - LANG=${LANG:-en_US.UTF-8}
+      - EDITOR=${EDITOR:-nano}
+      - TERM=${TERM:-xterm-256color}
+    # Usar o mesmo ID de usuário e grupo do container para evitar problemas de permissão
+    user: "1001:1001"
+    tty: true
+    stdin_open: true
+    network_mode: host
+    # Adicionar capacidades para melhor integração com o host
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined 
